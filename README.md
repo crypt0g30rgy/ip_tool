@@ -7,9 +7,9 @@ Generate all possible IP addresses within a given range
 # for global usage
 
 ```bash
-chmod +x ip_range_tool.py
+cd ip_tool/ && chmod +x ip_range_tool.py
 ```
 
 ```bash
-mv /usr/local/bin/ip_range_tool.py
+mv ip_range_tool.py /usr/local/bin/ip_range_tool.py
 ```
