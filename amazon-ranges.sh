@@ -1,20 +1,39 @@
 #!/usr/bin/env bash
 
-# Define a timestamp function
-timestamp=$(date +"%Y-%m-%d_%H-%M-%S")
+set -euo pipefail
 
-## -- Download All Ips --
+if [[ $# -ne 1 ]]; then
+	printf 'Usage: %s OUTPUT_DIR\n' "$0" >&2
+	exit 2
+fi
 
-wget https://ip-ranges.amazonaws.com/ip-ranges.json
+if ! command -v jq >/dev/null 2>&1; then
+	printf 'Error: jq is required.\n' >&2
+	exit 1
+fi
 
-## -- Extract IPv4 Addresses --
+if ! command -v wget >/dev/null 2>&1; then
+	printf 'Error: wget is required.\n' >&2
+	exit 1
+fi
 
-cat ip-ranges.json | jq '.prefixes' | tee -a ipv4.json
+output_dir=$1
+mkdir -p "$output_dir"
+ranges_file=$(mktemp)
+trap 'rm -f "$ranges_file"' EXIT
 
-## -- Get ec2 ipv4 addresses -- 
+wget -qO "$ranges_file" https://ip-ranges.amazonaws.com/ip-ranges.json
+jq -e '.prefixes | type == "array"' "$ranges_file" >/dev/null
 
-jq -r '.[] | select(.service == "EC2") | .ip_prefix' ipv4.json  | tee -a ec2.json
+while IFS=$'\t' read -r service region; do
+	[[ -n "$service" && -n "$region" ]] || continue
 
-## -- For Comparison --
-
-mv ip-ranges.json $timestamp-ip-ranges.json
+	service_dir="$output_dir/$service"
+	mkdir -p "$service_dir"
+	jq --arg service "$service" --arg region "$region" \
+		'[.prefixes[] | select(.service == $service and .region == $region)] | sort_by(.ip_prefix)' \
+		"$ranges_file" > "$service_dir/$region.json"
+done < <(
+	jq -r '.prefixes | sort_by(.service, .region) | unique_by([.service, .region])[] | [.service, .region] | @tsv' \
+		"$ranges_file"
+)
